@@ -111,21 +111,66 @@ app.patch('/rooms/:code/rename', async (req, res) => {
 const httpServer = createServer(app)
 const io = new Server(httpServer, { cors: { origin: '*' } })
 
-const roomStates: Record<string, { tokens: Record<string, { id: string; x: number; y: number }> }> = {}
+interface RoomPlayer {
+  id: string
+  username: string
+  color: string
+  isGM: boolean
+  connected: boolean
+  socketId: string
+}
+
+const roomStates: Record<string, {
+  tokens: Record<string, { id: string; x: number; y: number }>
+  players: Record<string, RoomPlayer>
+}> = {}
+
+const COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c']
 
 io.on('connection', (socket) => {
   console.log('Player connected:', socket.id)
 
-  socket.on('join-room', async (data: string | { roomId: string; userId?: string }) => {
+  socket.on('join-room', async (data: string | { roomId: string; userId?: string; username?: string }) => {
     const roomId = typeof data === 'string' ? data : data.roomId
     const userId = typeof data === 'object' ? data.userId : undefined
+    const username = typeof data === 'object' ? data.username : undefined
 
     socket.join(roomId)
-    if (roomStates[roomId]) {
-      socket.emit('room-state', roomStates[roomId])
-    }
-    socket.to(roomId).emit('player-joined', socket.id)
 
+    if (!roomStates[roomId]) {
+      roomStates[roomId] = { tokens: {}, players: {} }
+    }
+
+    // Определяем GM — первый кто вошёл
+    const isGM = Object.keys(roomStates[roomId].players).length === 0
+
+    // Выбираем цвет
+    const usedColors = Object.values(roomStates[roomId].players).map(p => p.color)
+    const color = COLORS.find(c => !usedColors.includes(c)) || COLORS[0]
+
+    // Добавляем игрока
+    const player: RoomPlayer = {
+      id: userId || socket.id,
+      username: username || 'Игрок',
+      color,
+      isGM,
+      connected: true,
+      socketId: socket.id,
+    }
+    roomStates[roomId].players[player.id] = player
+
+    // Сохраняем данные на сокете для disconnect
+    socket.data.roomId = roomId
+    socket.data.playerId = player.id
+
+    // Отправляем новому игроку текущее состояние
+    socket.emit('room-state', { tokens: roomStates[roomId].tokens })
+    socket.emit('room-players', Object.values(roomStates[roomId].players))
+
+    // Сообщаем остальным о новом игроке
+    socket.to(roomId).emit('player-joined', player)
+
+    // Сохраняем в БД
     if (userId) {
       try {
         await prisma.roomMember.upsert({
@@ -139,13 +184,21 @@ io.on('connection', (socket) => {
 
   socket.on('token-move', (data: { roomId: string; id: string; x: number; y: number }) => {
     if (!roomStates[data.roomId]) {
-      roomStates[data.roomId] = { tokens: {} }
+      roomStates[data.roomId] = { tokens: {}, players: {} }
     }
     roomStates[data.roomId].tokens[data.id] = { id: data.id, x: data.x, y: data.y }
     socket.to(data.roomId).emit('token-move', data)
   })
 
   socket.on('disconnect', () => {
+    const roomId = socket.data.roomId
+    const playerId = socket.data.playerId
+
+    if (roomId && playerId && roomStates[roomId]?.players[playerId]) {
+      roomStates[roomId].players[playerId].connected = false
+      socket.to(roomId).emit('player-left', playerId)
+    }
+
     console.log('Player disconnected:', socket.id)
   })
 })

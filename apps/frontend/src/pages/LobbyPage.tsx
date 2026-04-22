@@ -47,7 +47,7 @@ export default function LobbyPage() {
     })
     const data = await res.json()
     if (!res.ok) { setError(data.message); return }
-    await fetchRooms()
+    window.location.href = `/room/${data.roomId}`
   }
 
   const renameRoom = async (code: string) => {
