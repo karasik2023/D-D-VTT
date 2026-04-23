@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import type { RoomPermissions } from './permissionsStore'
 
 export interface Player {
   id: string
@@ -6,6 +7,7 @@ export interface Player {
   color: string
   isGM: boolean
   connected: boolean
+  permissions?: RoomPermissions
 }
 
 interface PlayersStore {
@@ -14,6 +16,7 @@ interface PlayersStore {
   addPlayer: (player: Player) => void
   removePlayer: (id: string) => void
   updatePlayer: (id: string, data: Partial<Player>) => void
+  updatePlayerPermission: (id: string, key: keyof RoomPermissions, value: boolean) => void
 }
 
 export const usePlayersStore = create<PlayersStore>((set) => ({
@@ -33,5 +36,12 @@ export const usePlayersStore = create<PlayersStore>((set) => ({
 
   updatePlayer: (id, data) => set((state) => ({
     players: state.players.map(p => p.id === id ? { ...p, ...data } : p)
+  })),
+
+  updatePlayerPermission: (id, key, value) => set((state) => ({
+    players: state.players.map(p => p.id === id ? {
+      ...p,
+      permissions: { ...(p.permissions || {} as RoomPermissions), [key]: value }
+    } : p)
   })),
 }))
