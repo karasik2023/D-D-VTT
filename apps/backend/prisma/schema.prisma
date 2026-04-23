@@ -25,6 +25,7 @@ model User {
   createdAt    DateTime     @default(now())
   rooms        Room[]
   memberships  RoomMember[]
+  assets    Asset[]
 }
 
 model Room {
@@ -35,4 +36,18 @@ model Room {
   ownerId   String
   createdAt DateTime     @default(now())
   members   RoomMember[]
+}
+
+model Asset {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String   // "TOKEN" | "MAP" | "SCENE"
+  name      String
+  filename  String   // имя файла на диске
+  url       String   // /uploads/tokens/abc123.png
+  size      Int      // байты
+  createdAt DateTime @default(now())
+
+  @@index([userId, type])
 }

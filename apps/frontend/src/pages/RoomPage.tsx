@@ -7,8 +7,8 @@ import { FaUsers, FaDiceD20, FaFont, FaEyeSlash, FaMap, FaCube, FaClipboard, FaD
 import { FaMousePointer, FaPencilAlt, FaRuler, FaUserNinja } from 'react-icons/fa'
 import { MdGridOn, MdLogout, MdPanTool, MdSearch, MdClear } from 'react-icons/md'
 import { useRoom } from '../hooks/useRoom'
+import TokensLibrary from '../components/TokensLibrary'
 
-// Контекстное меню
 interface ContextMenu {
   x: number
   y: number
@@ -22,6 +22,38 @@ function MapImage() {
   return <KonvaImage image={image} x={0} y={0} />
 }
 
+// Токен с картинкой
+function TokenImage({ url }: { url: string }) {
+  const [image] = useImage(url, 'anonymous')
+  if (!image) return null
+  return <KonvaImage image={image} x={-30} y={-30} width={60} height={60} cornerRadius={30} />
+}
+
+interface TokenShapeProps {
+  token: { id: string; x: number; y: number; color: string; name: string; imageUrl?: string }
+  onDragEnd: (id: string, x: number, y: number) => void
+  onContextMenu: (e: Konva.KonvaEventObject<MouseEvent>, tokenId: string, tokenName: string, tokenColor: string) => void
+}
+
+function TokenShape({ token, onDragEnd, onContextMenu }: TokenShapeProps) {
+  return (
+    <Group
+      x={token.x}
+      y={token.y}
+      draggable
+      onDragEnd={e => onDragEnd(token.id, e.target.x(), e.target.y())}
+      onContextMenu={e => onContextMenu(e, token.id, token.name, token.color)}
+    >
+      {token.imageUrl ? (
+        <TokenImage url={token.imageUrl} />
+      ) : (
+        <Circle radius={30} fill={token.color} shadowBlur={10} shadowColor={token.color} />
+      )}
+    
+    </Group>
+  )
+}
+
 export default function RoomPage() {
   const { roomId } = useParams<{ roomId: string }>()
   const stageRef = useRef<Konva.Stage>(null)
@@ -33,7 +65,7 @@ export default function RoomPage() {
   const {
     tokens, players, connected, activeTool, activePanel, activeSection,
     setActiveTool, setActivePanel, setActiveSection,
-    handleDragEnd, copyLink,
+    handleDragEnd, copyLink, createToken,
     initiativeEntries, addToInitiative, removeFromInitiative, updateInitiative, clearInitiative,
   } = useRoom(roomId)
 
@@ -51,7 +83,6 @@ export default function RoomPage() {
     return () => window.removeEventListener('resize', updateSize)
   }, [])
 
-  // Закрываем контекстное меню по клику вне
   useEffect(() => {
     const handler = () => setContextMenu(null)
     window.addEventListener('click', handler)
@@ -95,6 +126,39 @@ export default function RoomPage() {
     })
     setContextMenu(null)
     setActivePanel('initiative')
+  }
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    const data = e.dataTransfer.getData('application/vtt-token')
+    if (!data) return
+    const tokenData = JSON.parse(data)
+
+    const stage = stageRef.current
+    if (!stage) return
+
+    const rect = canvasRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const screenX = e.clientX - rect.left
+    const screenY = e.clientY - rect.top
+    const scale = stage.scaleX()
+    const worldX = (screenX - stage.x()) / scale
+    const worldY = (screenY - stage.y()) / scale
+
+    const colors = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6']
+    createToken({
+      id: `token-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      x: worldX,
+      y: worldY,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      name: tokenData.name,
+      imageUrl: tokenData.imageUrl,
+    })
+  }
+
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'copy'
   }
 
   const tools = [
@@ -161,23 +225,23 @@ export default function RoomPage() {
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
 
         {/* Canvas */}
-        <div ref={canvasRef} style={{ width: '100%', height: '100%' }}>
+        <div
+          ref={canvasRef}
+          style={{ width: '100%', height: '100%' }}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+        >
           {canvasSize.width > 0 && (
             <Stage ref={stageRef} width={canvasSize.width} height={canvasSize.height} draggable onWheel={handleWheel}>
               <Layer><MapImage /></Layer>
               <Layer>
                 {tokens.map(token => (
-                  <Group
+                  <TokenShape
                     key={token.id}
-                    x={token.x}
-                    y={token.y}
-                    draggable
-                    onDragEnd={e => handleDragEnd(token.id, e.target.x(), e.target.y())}
-                    onContextMenu={e => handleTokenRightClick(e, token.id, token.name, token.color)}
-                  >
-                    <Circle radius={30} fill={token.color} shadowBlur={10} shadowColor={token.color} />
-                    <Text x={-20} y={35} text={token.name} fill="white" fontSize={12} fontFamily="monospace" />
-                  </Group>
+                    token={token}
+                    onDragEnd={handleDragEnd}
+                    onContextMenu={handleTokenRightClick}
+                  />
                 ))}
               </Layer>
             </Stage>
@@ -234,7 +298,6 @@ export default function RoomPage() {
                 <button onClick={() => setActivePanel(null)} style={{ color: '#64748b', fontSize: 14 }}>✕</button>
               </div>
 
-              {/* Список игроков */}
               {activePanel === 'players' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                   {players.length === 0 ? (
@@ -252,7 +315,6 @@ export default function RoomPage() {
                 </div>
               )}
 
-              {/* Инициатива */}
               {activePanel === 'initiative' && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
@@ -293,7 +355,6 @@ export default function RoomPage() {
                 </div>
               )}
 
-              {/* Броски кубиков */}
               {activePanel === 'dice' && (
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   {['D4', 'D6', 'D8', 'D10', 'D12', 'D20', 'D100'].map(d => (
@@ -324,19 +385,24 @@ export default function RoomPage() {
                 <span style={{ color: '#a78bfa', fontWeight: 'bold', fontSize: 13 }}>{panelTitles[activeSection]}</span>
                 <button onClick={() => setActiveSection(null)} style={{ color: '#64748b', fontSize: 14 }}>✕</button>
               </div>
-              {(activeSection === 'tokens' || activeSection === 'scenes' || activeSection === 'objects') && (
+
+              {activeSection === 'tokens' && <TokensLibrary />}
+
+              {(activeSection === 'scenes' || activeSection === 'objects') && (
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <button style={{ background: '#0f3460', border: '1px dashed #334155', borderRadius: 8, padding: '6px 14px', color: '#64748b', fontSize: 12 }}>
                     + Загрузить
                   </button>
-                  <span style={{ color: '#475569', fontSize: 11 }}>нет файлов</span>
+                  <span style={{ color: '#475569', fontSize: 11 }}>скоро</span>
                 </div>
               )}
+
               {(activeSection === 'search' || activeSection === 'grid') && (
-                <p style={{ color: '#475569', fontSize: 11, margin: 0 }}>— скоро —</p>
+                <p style={{ color: '#475569', fontSize: 11, margin: 0, textAlign: 'center' }}>— скоро —</p>
               )}
             </div>
           )}
+
           <div style={{ ...barStyle }}>
             {assetItems.map(({ id, Icon, label }) => (
               <button key={id} title={label}

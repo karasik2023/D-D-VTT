@@ -7,6 +7,9 @@ import jwt from 'jsonwebtoken'
 import bcrypt from 'bcrypt'
 import { PrismaClient } from '@prisma/client'
 import { PrismaPg } from '@prisma/adapter-pg'
+import multer from 'multer'
+import path from 'path'
+import fs from 'fs'
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL })
 const prisma = new PrismaClient({ adapter })
@@ -14,6 +17,36 @@ const prisma = new PrismaClient({ adapter })
 const app = express()
 app.use(cors())
 app.use(express.json())
+
+// Папка для загрузок
+const UPLOADS_DIR = path.join(__dirname, '..', 'uploads')
+const TOKENS_DIR = path.join(UPLOADS_DIR, 'tokens')
+if (!fs.existsSync(TOKENS_DIR)) fs.mkdirSync(TOKENS_DIR, { recursive: true })
+
+// Статика для раздачи файлов
+app.use('/uploads', express.static(UPLOADS_DIR))
+
+// Настройка multer
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, TOKENS_DIR),
+  filename: (_req, file, cb) => {
+    const ext = path.extname(file.originalname)
+    const name = Math.random().toString(36).slice(2, 14) + ext
+    cb(null, name)
+  },
+})
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
+  fileFilter: (_req, file, cb) => {
+    if (['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.mimetype)) {
+      cb(null, true)
+    } else {
+      cb(new Error('Только изображения (png, jpg, webp, gif)'))
+    }
+  },
+})
 
 const JWT_SECRET = 'dnd-vtt-secret-key'
 
@@ -107,6 +140,65 @@ app.patch('/rooms/:code/rename', async (req, res) => {
   }
 })
 
+// Assets — токены
+app.post('/assets/tokens/upload', upload.single('file'), async (req, res) => {
+  const auth = req.headers.authorization
+  if (!auth) { res.status(401).json({ message: 'Не авторизован' }); return }
+  if (!req.file) { res.status(400).json({ message: 'Файл не загружен' }); return }
+
+  try {
+    const payload = jwt.verify(auth.replace('Bearer ', ''), JWT_SECRET) as { id: string }
+    const asset = await prisma.asset.create({
+      data: {
+        userId: payload.id,
+        type: 'TOKEN',
+        name: req.body.name || req.file.originalname,
+        filename: req.file.filename,
+        url: `/uploads/tokens/${req.file.filename}`,
+        size: req.file.size,
+      }
+    })
+    res.json(asset)
+  } catch {
+    res.status(401).json({ message: 'Неверный токен' })
+  }
+})
+
+app.get('/assets/tokens', async (req, res) => {
+  const auth = req.headers.authorization
+  if (!auth) { res.status(401).json({ message: 'Не авторизован' }); return }
+  try {
+    const payload = jwt.verify(auth.replace('Bearer ', ''), JWT_SECRET) as { id: string }
+    const tokens = await prisma.asset.findMany({
+      where: { userId: payload.id, type: 'TOKEN' },
+      orderBy: { createdAt: 'desc' }
+    })
+    res.json(tokens)
+  } catch {
+    res.status(401).json({ message: 'Неверный токен' })
+  }
+})
+
+app.delete('/assets/:id', async (req, res) => {
+  const auth = req.headers.authorization
+  if (!auth) { res.status(401).json({ message: 'Не авторизован' }); return }
+  try {
+    const payload = jwt.verify(auth.replace('Bearer ', ''), JWT_SECRET) as { id: string }
+    const asset = await prisma.asset.findUnique({ where: { id: req.params.id } })
+    if (!asset || asset.userId !== payload.id) {
+      res.status(403).json({ message: 'Нет доступа' }); return
+    }
+    // Удаляем файл с диска
+    const filePath = path.join(UPLOADS_DIR, 'tokens', asset.filename)
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
+    // Удаляем из БД
+    await prisma.asset.delete({ where: { id: req.params.id } })
+    res.json({ success: true })
+  } catch {
+    res.status(401).json({ message: 'Неверный токен' })
+  }
+})
+
 // Socket.io
 const httpServer = createServer(app)
 const io = new Server(httpServer, { cors: { origin: '*' } })
@@ -121,7 +213,7 @@ interface RoomPlayer {
 }
 
 const roomStates: Record<string, {
-  tokens: Record<string, { id: string; x: number; y: number }>
+  tokens: Record<string, any>
   players: Record<string, RoomPlayer>
 }> = {}
 
@@ -186,8 +278,23 @@ io.on('connection', (socket) => {
     if (!roomStates[data.roomId]) {
       roomStates[data.roomId] = { tokens: {}, players: {} }
     }
-    roomStates[data.roomId].tokens[data.id] = { id: data.id, x: data.x, y: data.y }
+    const existing = roomStates[data.roomId].tokens[data.id] || { id: data.id }
+    roomStates[data.roomId].tokens[data.id] = { ...existing, id: data.id, x: data.x, y: data.y }
     socket.to(data.roomId).emit('token-move', data)
+  })
+  socket.on('token-create', (data: { roomId: string; token: any }) => {
+    if (!roomStates[data.roomId]) {
+      roomStates[data.roomId] = { tokens: {}, players: {} }
+    }
+    roomStates[data.roomId].tokens[data.token.id] = {
+      id: data.token.id,
+      x: data.token.x,
+      y: data.token.y,
+      // Сохраняем доп. данные
+      ...data.token,
+    } as any
+    // Транслируем всем в комнате включая отправителя
+    io.to(data.roomId).emit('token-create', data.token)
   })
 
   socket.on('disconnect', () => {

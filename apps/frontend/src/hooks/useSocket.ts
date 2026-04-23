@@ -4,6 +4,7 @@ import { useTokenStore } from '../stores/tokenStore'
 import { useRoomStore } from '../stores/roomStore'
 import { usePlayersStore } from '../stores/playersStore'
 import type { Player } from '../stores/playersStore'
+import type { Token } from '../stores/tokenStore'
 
 const SOCKET_URL = 'http://localhost:3001'
 
@@ -40,7 +41,14 @@ export function useSocket(roomId: string | undefined) {
       moveToken(data.id, data.x, data.y)
     })
 
-    s.on('room-state', (state: { tokens: Record<string, { id: string; x: number; y: number }> }) => {
+    s.on('token-create', (token: Token) => {
+      const { tokens } = useTokenStore.getState()
+      if (!tokens.find(t => t.id === token.id)) {
+        useTokenStore.setState({ tokens: [...tokens, token] })
+      }
+    })
+
+    s.on('room-state', (state: { tokens: Record<string, Token> }) => {
       applyServerState(state.tokens)
     })
 
@@ -64,6 +72,7 @@ export function useSocket(roomId: string | undefined) {
     return () => {
       s.off('connect')
       s.off('token-move')
+      s.off('token-create')
       s.off('room-state')
       s.off('room-players')
       s.off('player-joined')

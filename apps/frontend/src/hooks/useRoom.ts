@@ -4,11 +4,12 @@ import { useRoomStore } from '../stores/roomStore'
 import { usePlayersStore } from '../stores/playersStore'
 import { useInitiative } from './useInitiative'
 import { getSocket } from './useSocket'
+import type { Token } from '../stores/tokenStore'
 
 export function useRoom(roomId: string | undefined) {
   useSocket(roomId)
 
-  const { tokens, moveToken } = useTokenStore()
+  const { tokens, moveToken, addToken } = useTokenStore()
   const { players } = usePlayersStore()
   const {
     connected, activeTool, activePanel, activeSection, showPlayers,
@@ -26,6 +27,11 @@ export function useRoom(roomId: string | undefined) {
   const handleDragEnd = (id: string, x: number, y: number) => {
     moveToken(id, x, y)
     getSocket().emit('token-move', { roomId, id, x, y })
+  }
+
+  const createToken = (token: Token) => {
+    addToken(token)
+    getSocket().emit('token-create', { roomId, token })
   }
 
   const copyLink = () => {
@@ -46,6 +52,7 @@ export function useRoom(roomId: string | undefined) {
     setActiveSection,
     setShowPlayers,
     handleDragEnd,
+    createToken,
     copyLink,
     initiativeEntries,
     addToInitiative,
