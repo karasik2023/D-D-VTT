@@ -6,11 +6,12 @@ import cors from 'cors'
 import { authRouter } from './routes/auth'
 import { roomsRouter } from './routes/rooms'
 import { assetsRouter } from './routes/assets'
-import { UPLOADS_DIR } from './config/upload'
+import { UPLOADS_DIR } from './config/upload' 
 import { registerPlayerHandlers } from './sockets/playerHandlers'
 import { registerTokenHandlers } from './sockets/tokenHandlers'
 import { registerInitiativeHandlers } from './sockets/initiativeHandlers'
 import { registerPermissionHandlers } from './sockets/permissionHandlers'
+import { registerDiceHandlers } from './sockets/diceHandlers'
 
 const app = express()
 app.use(cors())
@@ -33,6 +34,7 @@ io.on('connection', (socket) => {
   registerTokenHandlers(io, socket)
   registerInitiativeHandlers(io, socket)
   registerPermissionHandlers(io, socket)
+  registerDiceHandlers(io, socket)
 })
 
 httpServer.listen(3001, () => console.log('Backend running on http://localhost:3001'))
