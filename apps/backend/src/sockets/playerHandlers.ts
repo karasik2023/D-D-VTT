@@ -12,28 +12,50 @@ export function registerPlayerHandlers(io: Server, socket: Socket) {
     socket.join(roomId)
     const room = getOrCreateRoom(roomId)
 
-    const isGM = Object.keys(room.players).length === 0
-    const usedColors = Object.values(room.players).map(p => p.color)
-    const color = COLORS.find(c => !usedColors.includes(c)) || COLORS[0]
+    console.log('[join-room]', { roomId, userId, username, socketId: socket.id })
+    console.log('[join-room] existing players:', Object.keys(room.players))
 
-    const player: RoomPlayer = {
-      id: userId || socket.id,
-      username: username || 'Игрок',
-      color,
-      isGM,
-      connected: true,
-      socketId: socket.id,
-      permissions: isGM ? { ...GM_PERMISSIONS } : { ...DEFAULT_PLAYER_PERMISSIONS },
+    const existingPlayer = userId ? room.players[userId] : null
+
+    if (existingPlayer) {
+      existingPlayer.connected = true
+      existingPlayer.socketId = socket.id
+      if (username) existingPlayer.username = username
+
+      // Отправляем состояние подключившемуся
+      socket.emit('room-state', { tokens: room.tokens })
+      socket.emit('room-players', Object.values(room.players))
+      socket.emit('initiative-state', Object.values(room.initiative))
+
+      // Обновляем список у всех остальных
+      socket.to(roomId).emit('room-players', Object.values(room.players))
+    } else {
+      const usedColors = Object.values(room.players).map(p => p.color)
+      const color = COLORS.find(c => !usedColors.includes(c)) || COLORS[0]
+      const isGM = Object.keys(room.players).length === 0
+
+      const player: RoomPlayer = {
+        id: userId || socket.id,
+        username: username || 'Игрок',
+        color,
+        isGM,
+        connected: true,
+        socketId: socket.id,
+        permissions: isGM ? { ...GM_PERMISSIONS } : { ...DEFAULT_PLAYER_PERMISSIONS },
+      }
+      room.players[player.id] = player
+
+      // Отправляем состояние новому игроку
+      socket.emit('room-state', { tokens: room.tokens })
+      socket.emit('room-players', Object.values(room.players))
+      socket.emit('initiative-state', Object.values(room.initiative))
+
+      // Обновляем список у всех остальных
+      socket.to(roomId).emit('room-players', Object.values(room.players))
     }
-    room.players[player.id] = player
 
     socket.data.roomId = roomId
-    socket.data.playerId = player.id
-
-    socket.emit('room-state', { tokens: room.tokens })
-    socket.emit('room-players', Object.values(room.players))
-    socket.emit('initiative-state', Object.values(room.initiative))
-    socket.to(roomId).emit('player-joined', player)
+    socket.data.playerId = userId || socket.id
 
     if (userId) {
       try {
@@ -53,8 +75,10 @@ export function registerPlayerHandlers(io: Server, socket: Socket) {
       const room = getOrCreateRoom(roomId)
       if (room.players[playerId]) {
         room.players[playerId].connected = false
-        socket.to(roomId).emit('player-left', playerId)
+        // Шлём обновлённый список всем вместо player-left
+        io.to(roomId).emit('room-players', Object.values(room.players))
       }
     }
+    console.log('Player disconnected:', socket.id)
   })
 }

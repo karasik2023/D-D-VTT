@@ -14,7 +14,7 @@ let socket: Socket | null = null
 
 export function getSocket(): Socket {
   if (!socket) {
-    socket = io(SOCKET_URL)
+    socket = io(SOCKET_URL, { autoConnect: true })
   }
   return socket
 }
@@ -22,7 +22,7 @@ export function getSocket(): Socket {
 export function useSocket(roomId: string | undefined) {
   const { moveToken, applyServerState } = useTokenStore()
   const { setConnected } = useRoomStore()
-  const { setPlayers, addPlayer, removePlayer } = usePlayersStore()
+  const { setPlayers } = usePlayersStore()
   const { setMyRole, setMyId, setAllPermissions, setPermission } = usePermissionsStore()
   const initialized = useRef(false)
 
@@ -37,6 +37,12 @@ export function useSocket(roomId: string | undefined) {
 
     if (userId) setMyId(userId)
 
+    setPlayers([])
+
+    const joinRoom = () => {
+      s.emit('join-room', { roomId, userId, username })
+    }
+
     const applyMyPermissions = (players: Player[]) => {
       if (!userId) return
       const me = players.find(p => p.id === userId)
@@ -50,7 +56,15 @@ export function useSocket(roomId: string | undefined) {
 
     s.on('connect', () => {
       setConnected(true)
-      s.emit('join-room', { roomId, userId, username })
+      joinRoom()
+    })
+
+    s.on('disconnect', () => {
+      setConnected(false)
+    })
+
+    s.on('connect_error', (err) => {
+      console.log('❌ Socket connect error:', err.message)
     })
 
     s.on('token-move', (data: { id: string; x: number; y: number }) => {
@@ -68,48 +82,36 @@ export function useSocket(roomId: string | undefined) {
       applyServerState(state.tokens)
     })
 
+    // Единственный обработчик списка игроков — room-players
+    // Сервер теперь всегда шлёт полный список при любом изменении
     s.on('room-players', (players: Player[]) => {
       setPlayers(players)
       applyMyPermissions(players)
     })
 
-    s.on('player-joined', (player: Player) => {
-      addPlayer(player)
-      if (player.id === userId) {
-        setMyRole(player.isGM ? 'gm' : 'player')
-        if ((player as any).permissions) {
-          setAllPermissions((player as any).permissions as RoomPermissions)
-        }
-      }
-    })
-
-    s.on('player-left', (id: string) => {
-      removePlayer(id)
-    })
-
     s.on('permission-updated', (data: { playerId: string; key: string; value: boolean }) => {
-      // Обновляем свои права если это мы
       if (data.playerId === userId) {
         setPermission(data.key as keyof RoomPermissions, data.value)
       }
-      // Обновляем permissions игрока в сторе (для GM UI)
       const { updatePlayerPermission } = usePlayersStore.getState()
       updatePlayerPermission(data.playerId, data.key as keyof RoomPermissions, data.value)
     })
 
     if (s.connected) {
       setConnected(true)
-      s.emit('join-room', { roomId, userId, username })
+      joinRoom()
+    } else {
+      s.connect()
     }
 
     return () => {
       s.off('connect')
+      s.off('disconnect')
+      s.off('connect_error')
       s.off('token-move')
       s.off('token-create')
       s.off('room-state')
       s.off('room-players')
-      s.off('player-joined')
-      s.off('player-left')
       s.off('permission-updated')
       initialized.current = false
     }

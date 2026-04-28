@@ -1,13 +1,21 @@
 import { useRef, useEffect, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { Stage, Layer, Circle, Text, Group, Image as KonvaImage } from 'react-konva'
+import { Stage, Layer, Group, Circle, Image as KonvaImage } from 'react-konva'
 import useImage from 'use-image'
 import Konva from 'konva'
 import { FaUsers, FaDiceD20, FaFont, FaEyeSlash, FaMap, FaCube, FaClipboard, FaDice } from 'react-icons/fa6'
 import { FaMousePointer, FaPencilAlt, FaRuler, FaUserNinja } from 'react-icons/fa'
-import { MdGridOn, MdLogout, MdPanTool, MdSearch, MdClear } from 'react-icons/md'
+import { MdGridOn, MdLogout, MdPanTool, MdSearch } from 'react-icons/md'
 import { useRoom } from '../hooks/useRoom'
 import TokensLibrary from '../components/TokensLibrary'
+import PlayersPanel from '../components/panels/PlayersPanel'
+import InitiativePanel from '../components/panels/InitiativePanel'
+import DicePanel from '../components/panels/DicePanel'
+import ScenesPanel from '../components/panels/ScenesPanel'
+import ObjectsPanel from '../components/panels/ObjectsPanel'
+import SearchPanel from '../components/panels/SearchPanel'
+import GridPanel from '../components/panels/GridPanel'
+import { getSocket } from '../hooks/useSocket'
 
 interface ContextMenu {
   x: number
@@ -22,7 +30,6 @@ function MapImage() {
   return <KonvaImage image={image} x={0} y={0} />
 }
 
-// Токен с картинкой
 function TokenImage({ url }: { url: string }) {
   const [image] = useImage(url, 'anonymous')
   if (!image) return null
@@ -49,7 +56,6 @@ function TokenShape({ token, onDragEnd, onContextMenu }: TokenShapeProps) {
       ) : (
         <Circle radius={30} fill={token.color} shadowBlur={10} shadowColor={token.color} />
       )}
-    
     </Group>
   )
 }
@@ -63,11 +69,24 @@ export default function RoomPage() {
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null)
 
   const {
-    tokens, players, connected, activeTool, activePanel, activeSection,
+    tokens, connected, activeTool, activePanel, activeSection,
     setActiveTool, setActivePanel, setActiveSection,
     handleDragEnd, copyLink, createToken,
-    initiativeEntries, addToInitiative, removeFromInitiative, updateInitiative, clearInitiative,
+    addToInitiative, removeFromInitiative,
   } = useRoom(roomId)
+
+  useEffect(() => {
+    console.log('RoomPage mounted, roomId:', roomId)
+    const s = getSocket()
+    console.log('socket connected:', s.connected, 'id:', s.id)
+  }, [])
+
+  useEffect(() => {
+    console.log('RoomPage mounted, roomId:', roomId)
+    console.trace('mount trace')
+    const s = getSocket()
+    console.log('socket connected:', s.connected, 'id:', s.id)
+  }, [])
 
   useEffect(() => {
     const updateSize = () => {
@@ -106,13 +125,7 @@ export default function RoomPage() {
   const handleTokenRightClick = (e: Konva.KonvaEventObject<MouseEvent>, tokenId: string, tokenName: string, tokenColor: string) => {
     e.evt.preventDefault()
     e.cancelBubble = true
-    setContextMenu({
-      x: e.evt.clientX,
-      y: e.evt.clientY,
-      tokenId,
-      tokenName,
-      tokenColor,
-    })
+    setContextMenu({ x: e.evt.clientX, y: e.evt.clientY, tokenId, tokenName, tokenColor })
   }
 
   const handleAddToInitiative = () => {
@@ -136,9 +149,9 @@ export default function RoomPage() {
 
     const stage = stageRef.current
     if (!stage) return
-
     const rect = canvasRef.current?.getBoundingClientRect()
     if (!rect) return
+
     const screenX = e.clientX - rect.left
     const screenY = e.clientY - rect.top
     const scale = stage.scaleX()
@@ -161,6 +174,7 @@ export default function RoomPage() {
     e.dataTransfer.dropEffect = 'copy'
   }
 
+  // Тулбары — теперь хранят ссылку на компонент панели
   const tools = [
     { id: 'select',  Icon: FaMousePointer, label: 'Выделение' },
     { id: 'move',    Icon: MdPanTool,      label: 'Перетаскивание' },
@@ -172,23 +186,18 @@ export default function RoomPage() {
   ]
 
   const listItems = [
-    { id: 'players',    Icon: FaUsers,   label: 'Игроки' },
-    { id: 'initiative', Icon: FaDice,    label: 'Инициатива' },
-    { id: 'dice',       Icon: FaDiceD20, label: 'Броски' },
+    { id: 'players',    Icon: FaUsers,   label: 'Игроки',     title: 'Игроки',          Panel: PlayersPanel },
+    { id: 'initiative', Icon: FaDice,    label: 'Инициатива', title: 'Инициатива',      Panel: InitiativePanel },
+    { id: 'dice',       Icon: FaDiceD20, label: 'Броски',     title: 'Броски кубиков',  Panel: DicePanel },
   ]
 
   const assetItems = [
-    { id: 'search',  Icon: MdSearch,    label: 'Поиск' },
-    { id: 'tokens',  Icon: FaUserNinja, label: 'Токены' },
-    { id: 'scenes',  Icon: FaMap,       label: 'Сцены' },
-    { id: 'objects', Icon: FaCube,      label: 'Объекты' },
-    { id: 'grid',    Icon: MdGridOn,    label: 'Сетка' },
+    { id: 'search',  Icon: MdSearch,    label: 'Поиск',    title: 'Поиск',    Panel: SearchPanel },
+    { id: 'tokens',  Icon: FaUserNinja, label: 'Токены',   title: 'Токены',   Panel: TokensLibrary },
+    { id: 'scenes',  Icon: FaMap,       label: 'Сцены',    title: 'Сцены',    Panel: ScenesPanel },
+    { id: 'objects', Icon: FaCube,      label: 'Объекты',  title: 'Объекты',  Panel: ObjectsPanel },
+    { id: 'grid',    Icon: MdGridOn,    label: 'Сетка',    title: 'Сетка',    Panel: GridPanel },
   ]
-
-  const panelTitles: Record<string, string> = {
-    players: 'Игроки', initiative: 'Инициатива', dice: 'Броски кубиков',
-    tokens: 'Токены', scenes: 'Сцены', objects: 'Объекты', search: 'Поиск', grid: 'Сетка',
-  }
 
   const barStyle: React.CSSProperties = {
     background: '#16213e', border: '1px solid #1e293b',
@@ -201,6 +210,9 @@ export default function RoomPage() {
     background: active ? '#7c3aed' : 'transparent',
     border: active ? '1px solid #a78bfa' : '1px solid transparent',
   })
+
+  const activeListItem = listItems.find(i => i.id === activePanel)
+  const activeAssetItem = assetItems.find(i => i.id === activeSection)
 
   return (
     <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', background: '#1a1a2e', overflow: 'hidden' }}>
@@ -225,12 +237,7 @@ export default function RoomPage() {
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
 
         {/* Canvas */}
-        <div
-          ref={canvasRef}
-          style={{ width: '100%', height: '100%' }}
-          onDrop={handleDrop}
-          onDragOver={handleDragOver}
-        >
+        <div ref={canvasRef} style={{ width: '100%', height: '100%' }} onDrop={handleDrop} onDragOver={handleDragOver}>
           {canvasSize.width > 0 && (
             <Stage ref={stageRef} width={canvasSize.width} height={canvasSize.height} draggable onWheel={handleWheel}>
               <Layer><MapImage /></Layer>
@@ -250,10 +257,7 @@ export default function RoomPage() {
 
         {/* Контекстное меню токена */}
         {contextMenu && (
-          <div
-            onClick={e => e.stopPropagation()}
-            style={{ position: 'fixed', top: contextMenu.y, left: contextMenu.x, background: '#16213e', border: '1px solid #1e293b', borderRadius: 10, padding: '6px', zIndex: 999, minWidth: 180, boxShadow: '0 4px 20px rgba(0,0,0,0.5)' }}
-          >
+          <div onClick={e => e.stopPropagation()} style={{ position: 'fixed', top: contextMenu.y, left: contextMenu.x, background: '#16213e', border: '1px solid #1e293b', borderRadius: 10, padding: '6px', zIndex: 999, minWidth: 180, boxShadow: '0 4px 20px rgba(0,0,0,0.5)' }}>
             <div style={{ padding: '4px 8px 8px', borderBottom: '1px solid #1e293b', marginBottom: 4 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <div style={{ width: 10, height: 10, borderRadius: '50%', background: contextMenu.tokenColor }} />
@@ -291,79 +295,13 @@ export default function RoomPage() {
             ))}
           </div>
 
-          {activePanel && (
-            <div style={{ position: 'absolute', top: 'calc(100% + 8px)', left: 0, background: '#16213e', border: '1px solid #1e293b', borderRadius: 12, padding: 14, minWidth: 240, maxWidth: 300 }}>
+          {activeListItem && (
+            <div style={{ position: 'absolute', top: 'calc(100% + 8px)', left: 0, background: '#16213e', border: '1px solid #1e293b', borderRadius: 12, padding: 14, minWidth: 240, maxWidth: 320 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <span style={{ color: '#a78bfa', fontWeight: 'bold', fontSize: 13 }}>{panelTitles[activePanel]}</span>
+                <span style={{ color: '#a78bfa', fontWeight: 'bold', fontSize: 13 }}>{activeListItem.title}</span>
                 <button onClick={() => setActivePanel(null)} style={{ color: '#64748b', fontSize: 14 }}>✕</button>
               </div>
-
-              {activePanel === 'players' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {players.length === 0 ? (
-                    <p style={{ color: '#475569', fontSize: 11, margin: 0, textAlign: 'center' }}>— нет игроков —</p>
-                  ) : (
-                    players.map(player => (
-                      <div key={player.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 8px', background: '#0f3460', borderRadius: 8 }}>
-                        <div style={{ width: 10, height: 10, borderRadius: '50%', background: player.connected ? player.color : '#475569', flexShrink: 0 }} />
-                        <span style={{ color: '#e2e8f0', fontSize: 13, flex: 1 }}>{player.username}</span>
-                        {player.isGM && <span style={{ color: '#a78bfa', fontSize: 10, background: '#1e1b4b', borderRadius: 4, padding: '2px 6px' }}>GM</span>}
-                        {!player.connected && <span style={{ color: '#475569', fontSize: 10 }}>офлайн</span>}
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
-
-              {activePanel === 'initiative' && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                    <span style={{ color: '#64748b', fontSize: 11 }}>ПКМ по токену чтобы добавить</span>
-                    {initiativeEntries.length > 0 && (
-                      <button
-                        onClick={clearInitiative}
-                        title="Очистить"
-                        style={{ color: '#64748b', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}
-                      >
-                        <MdClear size={14} color="#64748b" /> Сбросить
-                      </button>
-                    )}
-                  </div>
-
-                  {initiativeEntries.length === 0 ? (
-                    <p style={{ color: '#475569', fontSize: 11, margin: 0, textAlign: 'center' }}>— список пуст —</p>
-                  ) : (
-                    initiativeEntries.map((entry, index) => (
-                      <div key={entry.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', background: index === 0 ? '#1e1b4b' : '#0f3460', borderRadius: 8, border: index === 0 ? '1px solid #a78bfa' : '1px solid transparent' }}>
-                        <span style={{ color: '#475569', fontSize: 11, minWidth: 16, textAlign: 'center' }}>{index + 1}</span>
-                        <div style={{ width: 10, height: 10, borderRadius: '50%', background: entry.color, flexShrink: 0 }} />
-                        <span style={{ color: '#e2e8f0', fontSize: 13, flex: 1 }}>{entry.name}</span>
-                        <input
-                          type="number"
-                          value={entry.initiative ?? ''}
-                          onChange={e => updateInitiative(entry.id, e.target.value === '' ? null : Number(e.target.value))}
-                          placeholder="—"
-                          style={{ width: 44, background: '#1e293b', border: '1px solid #334155', borderRadius: 6, padding: '3px 6px', color: '#e2e8f0', fontSize: 12, textAlign: 'center', outline: 'none' }}
-                        />
-                        <button
-                          onClick={() => removeFromInitiative(entry.id)}
-                          style={{ color: '#475569', fontSize: 12, flexShrink: 0 }}
-                        >✕</button>
-                      </div>
-                    ))
-                  )}
-                </div>
-              )}
-
-              {activePanel === 'dice' && (
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {['D4', 'D6', 'D8', 'D10', 'D12', 'D20', 'D100'].map(d => (
-                    <button key={d} style={{ background: '#0f3460', border: '1px solid #334155', borderRadius: 8, padding: '5px 8px', color: '#e2e8f0', fontSize: 12, fontFamily: 'monospace' }}>
-                      {d}
-                    </button>
-                  ))}
-                </div>
-              )}
+              <activeListItem.Panel roomId={roomId} />
             </div>
           )}
         </div>
@@ -381,10 +319,7 @@ export default function RoomPage() {
         <div style={{ position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
           {activeSection && (
             <div style={{ background: '#16213e', border: '1px solid #1e293b', borderRadius: 12, padding: 14, minWidth: 280 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                <span style={{ color: '#a78bfa', fontWeight: 'bold', fontSize: 13 }}>{panelTitles[activeSection]}</span>
-                <button onClick={() => setActiveSection(null)} style={{ color: '#64748b', fontSize: 14 }}>✕</button>
-              </div>
+              
 
               {activeSection === 'tokens' && <TokensLibrary />}
 
@@ -413,6 +348,8 @@ export default function RoomPage() {
             ))}
           </div>
         </div>
+
+
 
       </div>
     </div>
