@@ -1,15 +1,24 @@
 import { create } from 'zustand'
 
-export type Role = 'gm' | 'player'
-
+// Синхронизировано с backend/src/config/constants.ts
 export interface RoomPermissions {
   canMoveTokens: boolean
   canAddTokens: boolean
   canDeleteTokens: boolean
   canDrawFog: boolean
-  canSeeThroghFog: boolean
+  canSeeThroughFog: boolean
   canUploadAssets: boolean
   canManageInitiative: boolean
+}
+
+const DEFAULT_PERMISSIONS: RoomPermissions = {
+  canMoveTokens: true,
+  canAddTokens: true,
+  canDeleteTokens: false,
+  canDrawFog: false,
+  canSeeThroughFog: false,
+  canUploadAssets: true,
+  canManageInitiative: false,
 }
 
 const GM_PERMISSIONS: RoomPermissions = {
@@ -17,60 +26,44 @@ const GM_PERMISSIONS: RoomPermissions = {
   canAddTokens: true,
   canDeleteTokens: true,
   canDrawFog: true,
-  canSeeThroghFog: true,
+  canSeeThroughFog: true,
   canUploadAssets: true,
   canManageInitiative: true,
 }
 
-const PLAYER_PERMISSIONS: RoomPermissions = {
-  canMoveTokens: true,
-  canAddTokens: true,
-  canDeleteTokens: false,
-  canDrawFog: false,
-  canSeeThroghFog: false,
-  canUploadAssets: true,
-  canManageInitiative: false,
-}
-
-export const DEFAULT_PERMISSIONS: Record<Role, RoomPermissions> = {
-  gm: GM_PERMISSIONS,
-  player: PLAYER_PERMISSIONS,
-}
-
 interface PermissionsStore {
-  myRole: Role | null
+  myRole: 'gm' | 'player' | null
   myId: string | null
   permissions: RoomPermissions
 
-  setMyRole: (role: Role) => void
-  setMyId: (id: string) => void
-  setPermission: (key: keyof RoomPermissions, value: boolean) => void
+  setMyRole: (role: 'gm' | 'player' | null) => void
+  setMyId: (id: string | null) => void
   setAllPermissions: (perms: RoomPermissions) => void
-  resetPermissions: () => void
-  can: (action: keyof RoomPermissions) => boolean
+  setPermission: (key: keyof RoomPermissions, value: boolean) => void
+  can: (key: keyof RoomPermissions) => boolean
 }
 
 export const usePermissionsStore = create<PermissionsStore>((set, get) => ({
   myRole: null,
   myId: null,
-  permissions: PLAYER_PERMISSIONS,
+  permissions: DEFAULT_PERMISSIONS,
 
   setMyRole: (role) => set({
     myRole: role,
-    permissions: { ...DEFAULT_PERMISSIONS[role] },
+    permissions: role === 'gm' ? GM_PERMISSIONS : DEFAULT_PERMISSIONS,
   }),
 
-  setMyId: (myId) => set({ myId }),
+  setMyId: (id) => set({ myId: id }),
+
+  setAllPermissions: (perms) => set({ permissions: perms }),
 
   setPermission: (key, value) => set((state) => ({
-    permissions: { ...state.permissions, [key]: value }
+    permissions: { ...state.permissions, [key]: value },
   })),
 
-  setAllPermissions: (permissions) => set({ permissions }),
-
-  resetPermissions: () => set((state) => ({
-    permissions: state.myRole ? { ...DEFAULT_PERMISSIONS[state.myRole] } : PLAYER_PERMISSIONS
-  })),
-
-  can: (action) => get().permissions[action],
+  can: (key) => {
+    const { myRole, permissions } = get()
+    if (myRole === 'gm') return true
+    return permissions[key] ?? false
+  },
 }))

@@ -6,10 +6,12 @@ import { useRoomStore } from '../stores/roomStore'
 import { usePlayersStore } from '../stores/playersStore'
 import { usePermissionsStore } from '../stores/permissionsStore'
 import { useDiceStore } from '../stores/diceStore'
+import { useFogStore } from '../stores/fogStore'
 import type { Player } from '../stores/playersStore'
 import type { Token } from '../stores/tokenStore'
 import type { RoomPermissions } from '../stores/permissionsStore'
 import type { DiceRollResult, DiceError } from '../types/dice'
+import type { FogShape } from '../stores/fogStore'
 
 // ─── Буфер для advantage/disadvantage ─────────────────────────────────────
 
@@ -75,6 +77,7 @@ export function useRoomTransport(roomId: string | undefined) {
   const { setConnected } = useRoomStore()
   const { setPlayers } = usePlayersStore()
   const { setMyRole, setMyId, setAllPermissions, setPermission } = usePermissionsStore()
+  const { setShapes, addShape, updateShape, removeShape, clearShapes } = useFogStore()
 
   useEffect(() => {
     if (!roomId) return
@@ -128,16 +131,10 @@ export function useRoomTransport(roomId: string | undefined) {
     })
 
     transport.onTokenCreate((token: Token) => {
-      console.log('=== FRONT received token-create from server ===', { id: token.id, name: token.name })
       const { tokens } = useTokenStore.getState()
-      console.log('=== FRONT current tokens:', tokens.map(t => ({ id: t.id, name: t.name })))
       const exists = tokens.find((t) => t.id === token.id)
-      console.log('=== FRONT token exists?', !!exists)
       if (!exists) {
-        console.log('=== FRONT adding token from server ===')
         addToken(token)
-      } else {
-        console.log('=== FRONT token already exists, skipping ===')
       }
     })
 
@@ -145,10 +142,10 @@ export function useRoomTransport(roomId: string | undefined) {
       removeToken(data.tokenId)
     })
 
-    transport.onRoomState((state: { tokens: Record<string, Token> }) => {
+    transport.onRoomState((state: { tokens: Record<string, Token>; fogShapes: Record<string, FogShape> }) => {
       console.log('room-state received:', state)
-      console.log('token count:', Object.keys(state.tokens).length)
       applyServerState(state.tokens)
+      setShapes(Object.values(state.fogShapes || {}))
     })
 
     transport.onRoomPlayers((players: Player[]) => {
@@ -170,6 +167,24 @@ export function useRoomTransport(roomId: string | undefined) {
 
     transport.onDiceError((err: DiceError) => {
       handleDiceError(err)
+    })
+
+    // ─── ТУМАН ВОЙНЫ СЛУШАТЕЛИ ─── НОВОЕ ──────────────────────────────
+
+    transport.onFogShapeCreate((shape: FogShape) => {
+      addShape(shape)
+    })
+
+    transport.onFogShapeUpdate((data: { shapeId: string; updates: Partial<FogShape> }) => {
+      updateShape(data.shapeId, data.updates)
+    })
+
+    transport.onFogShapeDelete((data: { shapeId: string }) => {
+      removeShape(data.shapeId)
+    })
+
+    transport.onFogClearAll(() => {
+      clearShapes()
     })
 
     return () => {

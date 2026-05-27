@@ -13,13 +13,13 @@ export function registerPlayerHandlers(io: Server, socket: Socket) {
 
     socket.join(roomId)
 
-    // ЗАГРУЖАЕМ ТОКЕНЫ И ИНИЦИАТИВУ ИЗ БД ПЕРЕД ИСПОЛЬЗОВАНИЕМ
+    // Загружаем состояние из БД
     await loadRoomFromDB(roomId)
 
     const room = getOrCreateRoom(roomId)
 
     console.log('[join-room] loaded tokens:', Object.keys(room.tokens).length)
-    console.log('[join-room] tokens:', room.tokens)
+    console.log('[join-room] loaded fog shapes:', Object.keys(room.fogShapes).length)
 
     const existingPlayer = userId ? room.players[userId] : null
 
@@ -29,7 +29,10 @@ export function registerPlayerHandlers(io: Server, socket: Socket) {
       if (username) existingPlayer.username = username
 
       // Отправляем состояние подключившемуся
-      socket.emit('room-state', { tokens: room.tokens })
+      socket.emit('room-state', {
+        tokens: room.tokens,
+        fogShapes: room.fogShapes,
+      })
       socket.emit('room-players', Object.values(room.players))
       socket.emit('initiative-state', Object.values(room.initiative))
 
@@ -52,7 +55,10 @@ export function registerPlayerHandlers(io: Server, socket: Socket) {
       room.players[player.id] = player
 
       // Отправляем состояние новому игроку
-      socket.emit('room-state', { tokens: room.tokens })
+      socket.emit('room-state', {
+        tokens: room.tokens,
+        fogShapes: room.fogShapes,
+      })
       socket.emit('room-players', Object.values(room.players))
       socket.emit('initiative-state', Object.values(room.initiative))
 

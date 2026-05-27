@@ -4,9 +4,11 @@ import { useRoomStore } from '../stores/roomStore'
 import { usePlayersStore } from '../stores/playersStore'
 import { usePermissionsStore } from '../stores/permissionsStore'
 import { useInitiative } from './useInitiative'
+import { useFogStore } from '../stores/fogStore'
 import { getTransport } from '../services/roomService'
 import type { Token } from '../stores/tokenStore'
 import type { RoomPermissions } from '../stores/permissionsStore'
+import type { FogShape } from '../stores/fogStore'
 
 export function useRoom(roomId: string | undefined) {
   useRoomTransport(roomId)
@@ -27,6 +29,24 @@ export function useRoom(roomId: string | undefined) {
     clearInitiative,
   } = useInitiative(roomId)
 
+  const {
+    shapes: fogShapes,
+    activeTool: fogActiveTool,
+    previewMode,
+    selectedShapeId,
+    tempPoints,
+    setActiveTool: setFogActiveTool,
+    setPreviewMode,
+    setSelectedShapeId,
+    addShape,
+    updateShape,
+    removeShape,
+    clearShapes,
+    addTempPoint,
+    clearTempPoints,
+    setIsDrawing,
+  } = useFogStore()
+
   const handleDragEnd = (id: string, x: number, y: number) => {
     if (!can('canMoveTokens')) return
     moveToken(id, x, y)
@@ -34,10 +54,8 @@ export function useRoom(roomId: string | undefined) {
   }
 
   const createToken = (token: Token) => {
-    console.log('=== FRONT createToken ===', { id: token.id, name: token.name })
     if (!can('canAddTokens')) return
     addToken(token)
-    console.log('=== FRONT added optimistically, tokens now:', useTokenStore.getState().tokens.length)
     getTransport().createToken(roomId!, token)
   }
 
@@ -49,6 +67,32 @@ export function useRoom(roomId: string | undefined) {
   const copyLink = () => {
     navigator.clipboard.writeText(`${window.location.origin}/room/${roomId}`)
     alert('Ссылка скопирована!')
+  }
+
+  // ─── ТУМАН ВОЙНЫ ─── НОВОЕ ───────────────────────────────────────────
+
+  const createFogShape = (shape: FogShape) => {
+    if (myRole !== 'gm') return
+    addShape(shape)
+    getTransport().createFogShape(roomId!, shape, myId || '')
+  }
+
+  const updateFogShape = (shapeId: string, updates: Partial<FogShape>) => {
+    if (myRole !== 'gm') return
+    updateShape(shapeId, updates)
+    getTransport().updateFogShape(roomId!, shapeId, updates)
+  }
+
+  const deleteFogShape = (shapeId: string) => {
+    if (myRole !== 'gm') return
+    removeShape(shapeId)
+    getTransport().deleteFogShape(roomId!, shapeId)
+  }
+
+  const clearAllFog = () => {
+    if (myRole !== 'gm') return
+    clearShapes()
+    getTransport().clearAllFog(roomId!)
   }
 
   return {
@@ -76,5 +120,22 @@ export function useRoom(roomId: string | undefined) {
     permissions,
     can,
     setPlayerPermission,
+
+    // Туман войны
+    fogShapes,
+    fogActiveTool,
+    previewMode,
+    selectedShapeId,
+    tempPoints,
+    setFogActiveTool,
+    setPreviewMode,
+    setSelectedShapeId,
+    createFogShape,
+    updateFogShape,
+    deleteFogShape,
+    clearAllFog,
+    addTempPoint,
+    clearTempPoints,
+    setIsDrawing,
   }
 }
