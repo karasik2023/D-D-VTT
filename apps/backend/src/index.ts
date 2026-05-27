@@ -6,7 +6,8 @@ import cors from 'cors'
 import { authRouter } from './routes/auth'
 import { roomsRouter } from './routes/rooms'
 import { assetsRouter } from './routes/assets'
-import { UPLOADS_DIR } from './config/upload' 
+import { diceRouter } from './routes/dice' // ← НОВЫЙ
+import { UPLOADS_DIR } from './config/upload'
 import { registerPlayerHandlers } from './sockets/playerHandlers'
 import { registerTokenHandlers } from './sockets/tokenHandlers'
 import { registerInitiativeHandlers } from './sockets/initiativeHandlers'
@@ -22,10 +23,11 @@ app.use('/uploads', express.static(UPLOADS_DIR))
 app.use('/auth', authRouter)
 app.use('/rooms', roomsRouter)
 app.use('/assets', assetsRouter)
+app.use('/dice', diceRouter) // ← НОВЫЙ
 
 // Socket.io
 const httpServer = createServer(app)
-const io = new Server(httpServer, { cors: { origin: '*' } })
+export const io = new Server(httpServer, { cors: { origin: '*' } }) // ← ЭКСПОРТ
 
 io.on('connection', (socket) => {
   console.log('Player connected:', socket.id)
@@ -34,6 +36,7 @@ io.on('connection', (socket) => {
   registerTokenHandlers(io, socket)
   registerInitiativeHandlers(io, socket)
   registerPermissionHandlers(io, socket)
+  // registerDiceHandlers больше не нужен для roll-dice, но можно оставить для других
   registerDiceHandlers(io, socket)
 })
 

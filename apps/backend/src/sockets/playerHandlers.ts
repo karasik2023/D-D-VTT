@@ -1,19 +1,25 @@
 import { Server, Socket } from 'socket.io'
 import { prisma } from '../config/prisma'
 import { COLORS, DEFAULT_PLAYER_PERMISSIONS, GM_PERMISSIONS } from '../config/constants'
-import { getOrCreateRoom, RoomPlayer } from './roomState'
+import { getOrCreateRoom, loadRoomFromDB, RoomPlayer } from './roomState'
 
 export function registerPlayerHandlers(io: Server, socket: Socket) {
   socket.on('join-room', async (data: string | { roomId: string; userId?: string; username?: string }) => {
+    console.log('=== join-room received ===')
+    console.log('data:', data)
     const roomId = typeof data === 'string' ? data : data.roomId
     const userId = typeof data === 'object' ? data.userId : undefined
     const username = typeof data === 'object' ? data.username : undefined
 
     socket.join(roomId)
+
+    // ЗАГРУЖАЕМ ТОКЕНЫ И ИНИЦИАТИВУ ИЗ БД ПЕРЕД ИСПОЛЬЗОВАНИЕМ
+    await loadRoomFromDB(roomId)
+
     const room = getOrCreateRoom(roomId)
 
-    console.log('[join-room]', { roomId, userId, username, socketId: socket.id })
-    console.log('[join-room] existing players:', Object.keys(room.players))
+    console.log('[join-room] loaded tokens:', Object.keys(room.tokens).length)
+    console.log('[join-room] tokens:', room.tokens)
 
     const existingPlayer = userId ? room.players[userId] : null
 
@@ -30,7 +36,7 @@ export function registerPlayerHandlers(io: Server, socket: Socket) {
       // Обновляем список у всех остальных
       socket.to(roomId).emit('room-players', Object.values(room.players))
     } else {
-      const usedColors = Object.values(room.players).map(p => p.color)
+      const usedColors = Object.values(room.players).map((p: RoomPlayer) => p.color)
       const color = COLORS.find(c => !usedColors.includes(c)) || COLORS[0]
       const isGM = Object.keys(room.players).length === 0
 
@@ -75,7 +81,6 @@ export function registerPlayerHandlers(io: Server, socket: Socket) {
       const room = getOrCreateRoom(roomId)
       if (room.players[playerId]) {
         room.players[playerId].connected = false
-        // Шлём обновлённый список всем вместо player-left
         io.to(roomId).emit('room-players', Object.values(room.players))
       }
     }

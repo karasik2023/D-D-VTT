@@ -100,6 +100,9 @@ function executeRoll(
 // === Регистрация хендлеров ===
 export function registerDiceHandlers(io: Server, socket: Socket) {
   socket.on('dice-roll', (data: DiceRollRequest) => {
+    console.log('=== registerDiceHandlers called ===')
+    console.log('socket.id:', socket.id)
+    console.log('[dice] Received:', data)
     try {
       if (!data.roomId || !data.formula) {
         return socket.emit('dice-error', { message: 'Invalid dice roll request' })

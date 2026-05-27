@@ -19,10 +19,7 @@ interface TokenStore {
 }
 
 export const useTokenStore = create<TokenStore>((set) => ({
-  tokens: [
-    { id: 'token-1', x: 100, y: 100, color: '#e74c3c', name: 'Воин' },
-    { id: 'token-2', x: 250, y: 150, color: '#3498db', name: 'Маг' },
-  ],
+  tokens: [], // ← убрали дефолтные токены, теперь загружаем с сервера
 
   setTokens: (tokens) => set({ tokens }),
 
@@ -38,11 +35,8 @@ export const useTokenStore = create<TokenStore>((set) => ({
     tokens: state.tokens.filter(t => t.id !== id)
   })),
 
-  applyServerState: (serverState) => set((state) => {
-    // Полностью заменяем список токенов на то что пришло с сервера
+  applyServerState: (serverState) => set(() => {
     const serverTokens = Object.values(serverState)
-    // Сохраняем дефолтные если их ещё нет на сервере
-    const defaults = state.tokens.filter(t => !serverState[t.id] && t.id.startsWith('token-'))
-    return { tokens: [...defaults, ...serverTokens] }
+    return { tokens: serverTokens }
   }),
 }))

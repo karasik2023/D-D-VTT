@@ -1,3 +1,5 @@
+// prisma/schema.prisma
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -7,12 +9,12 @@ datasource db {
 }
 
 model RoomMember {
-  id       String @id @default(cuid())
+  id       String   @id @default(cuid())
   roomCode String
   userId   String
   joinedAt DateTime @default(now())
-  room     Room   @relation(fields: [roomCode], references: [code])
-  user     User   @relation(fields: [userId], references: [id])
+  room     Room     @relation(fields: [roomCode], references: [code])
+  user     User     @relation(fields: [userId], references: [id])
 
   @@unique([roomCode, userId])
 }
@@ -25,17 +27,20 @@ model User {
   createdAt    DateTime     @default(now())
   rooms        Room[]
   memberships  RoomMember[]
-  assets    Asset[]
+  assets       Asset[]
 }
 
 model Room {
-  id        String       @id @default(cuid())
-  code      String       @unique
-  name      String       @default("Новая комната")
-  owner     User         @relation(fields: [ownerId], references: [id])
-  ownerId   String
-  createdAt DateTime     @default(now())
-  members   RoomMember[]
+  id           String            @id @default(cuid())
+  code         String            @unique
+  name         String            @default("Новая комната")
+  owner        User              @relation(fields: [ownerId], references: [id])
+  ownerId      String
+  createdAt    DateTime          @default(now())
+  members      RoomMember[]
+  tokens       Token[]
+  initiatives  InitiativeEntry[]
+  fogShapes    FogShape[]        // ← ДОБАВЛЕНО
 }
 
 model Asset {
@@ -44,10 +49,58 @@ model Asset {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   type      String   // "TOKEN" | "MAP" | "SCENE"
   name      String
-  filename  String   // имя файла на диске
-  url       String   // /uploads/tokens/abc123.png
-  size      Int      // байты
+  filename  String
+  url       String
+  size      Int
   createdAt DateTime @default(now())
 
   @@index([userId, type])
+}
+
+model FogShape {
+  id         String   @id @default(cuid())
+  roomId     String
+  room       Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  type       String   // "polygon" | "rect" | "circle" | "triangle" | "full"
+  points     Json     // [{x, y}, ...] или {x, y, w, h} или {x, y, r}
+  isRevealed Boolean  @default(false) // true = вырез (нет тумана)
+  isVisible  Boolean  @default(true)
+  createdBy  String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([roomId])
+}
+
+model Token {
+  id        String   @id @default(cuid())
+  roomId    String
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  x         Float
+  y         Float
+  color     String
+  name      String
+  imageUrl  String?
+  layer     String   @default("tokens")
+  scale     Float    @default(1)
+  rotation  Float    @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([roomId])
+}
+
+model InitiativeEntry {
+  id         String   @id @default(cuid())
+  roomId     String
+  room       Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  name       String
+  color      String
+  initiative Int?
+  tokenId    String?
+  order      Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  @@unique([roomId, tokenId])
+  @@index([roomId])
 }

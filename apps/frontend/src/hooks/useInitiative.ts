@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { getSocket } from './useSocket'
+import { getTransport } from '../services/roomService'
 import { useInitiativeStore } from '../stores/initiativeStore'
 import type { InitiativeEntry } from '../stores/initiativeStore'
 
@@ -8,59 +8,42 @@ export function useInitiative(roomId: string | undefined) {
 
   useEffect(() => {
     if (!roomId) return
-    const socket = getSocket()
+    const transport = getTransport()
 
-    socket.on('initiative-add', (entry: InitiativeEntry) => {
-      addEntry(entry)
-    })
-
-    socket.on('initiative-remove', (id: string) => {
-      removeEntry(id)
-    })
-
-    socket.on('initiative-update', (data: { id: string; value: number | null }) => {
-      setInitiative(data.id, data.value)
-    })
-
-    socket.on('initiative-clear', () => {
-      clearAll()
-    })
-
-    socket.on('initiative-state', (entries: InitiativeEntry[]) => {
+    transport.onInitiativeState((entries: InitiativeEntry[]) => {
       clearAll()
       entries.forEach(addEntry)
     })
 
+    // Остальные события инициативы — добавим в RoomTransport если нужны
+    // Пока что initiative-state загружает начальное состояние
+    // Реалтайм обновления инициативы будут через тот же транспорт
+
     return () => {
-      socket.off('initiative-add')
-      socket.off('initiative-remove')
-      socket.off('initiative-update')
-      socket.off('initiative-clear')
-      socket.off('initiative-state')
+      // cleanup
     }
   }, [roomId])
 
   const addToInitiative = (entry: InitiativeEntry) => {
     addEntry(entry)
-    getSocket().emit('initiative-add', { roomId, entry })
+    getTransport().addToInitiative(roomId!, entry)
   }
 
   const removeFromInitiative = (id: string) => {
     removeEntry(id)
-    getSocket().emit('initiative-remove', { roomId, id })
+    getTransport().removeFromInitiative(roomId!, id)
   }
 
   const updateInitiative = (id: string, value: number | null) => {
     setInitiative(id, value)
-    getSocket().emit('initiative-update', { roomId, id, value })
+    getTransport().updateInitiative(roomId!, id, value ?? 0)
   }
 
   const clearInitiative = () => {
     clearAll()
-    getSocket().emit('initiative-clear', { roomId })
+    getTransport().resetInitiative(roomId!)
   }
 
-  // Сортировка по убыванию (выше = первый в списке)
   const sorted = [...entries].sort((a, b) => {
     if (a.initiative === null) return 1
     if (b.initiative === null) return -1

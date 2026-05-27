@@ -7,6 +7,7 @@ import { FaUsers, FaDiceD20, FaFont, FaEyeSlash, FaMap, FaCube, FaClipboard, FaD
 import { FaMousePointer, FaPencilAlt, FaRuler, FaUserNinja } from 'react-icons/fa'
 import { MdGridOn, MdLogout, MdPanTool, MdSearch } from 'react-icons/md'
 import { useRoom } from '../hooks/useRoom'
+import { getTransport } from '../services/roomService'
 import TokensLibrary from '../components/TokensLibrary'
 import PlayersPanel from '../components/panels/PlayersPanel'
 import InitiativePanel from '../components/panels/InitiativePanel'
@@ -15,15 +16,8 @@ import ScenesPanel from '../components/panels/ScenesPanel'
 import ObjectsPanel from '../components/panels/ObjectsPanel'
 import SearchPanel from '../components/panels/SearchPanel'
 import GridPanel from '../components/panels/GridPanel'
-import { getSocket } from '../hooks/useSocket'
-
-interface ContextMenu {
-  x: number
-  y: number
-  tokenId: string
-  tokenName: string
-  tokenColor: string
-}
+import ContextMenu from '../components/ContextMenu'
+import { useContextMenu } from '../hooks/useContextMenu'
 
 function MapImage() {
   const [image] = useImage('/map.jpg')
@@ -66,7 +60,8 @@ export default function RoomPage() {
   const canvasRef = useRef<HTMLDivElement>(null)
   const username = localStorage.getItem('username') || 'Игрок'
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 })
-  const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null)
+  const [diceOpen, setDiceOpen] = useState(false)
+  const { show: showContextMenu } = useContextMenu()
 
   const {
     tokens, connected, activeTool, activePanel, activeSection,
@@ -77,15 +72,8 @@ export default function RoomPage() {
 
   useEffect(() => {
     console.log('RoomPage mounted, roomId:', roomId)
-    const s = getSocket()
-    console.log('socket connected:', s.connected, 'id:', s.id)
-  }, [])
-
-  useEffect(() => {
-    console.log('RoomPage mounted, roomId:', roomId)
-    console.trace('mount trace')
-    const s = getSocket()
-    console.log('socket connected:', s.connected, 'id:', s.id)
+    const transport = getTransport()
+    console.log('transport connected:', transport.isConnected(), 'id:', transport.getSocketId())
   }, [])
 
   useEffect(() => {
@@ -100,12 +88,6 @@ export default function RoomPage() {
     updateSize()
     window.addEventListener('resize', updateSize)
     return () => window.removeEventListener('resize', updateSize)
-  }, [])
-
-  useEffect(() => {
-    const handler = () => setContextMenu(null)
-    window.addEventListener('click', handler)
-    return () => window.removeEventListener('click', handler)
   }, [])
 
   const handleWheel = (e: Konva.KonvaEventObject<WheelEvent>) => {
@@ -125,20 +107,57 @@ export default function RoomPage() {
   const handleTokenRightClick = (e: Konva.KonvaEventObject<MouseEvent>, tokenId: string, tokenName: string, tokenColor: string) => {
     e.evt.preventDefault()
     e.cancelBubble = true
-    setContextMenu({ x: e.evt.clientX, y: e.evt.clientY, tokenId, tokenName, tokenColor })
-  }
 
-  const handleAddToInitiative = () => {
-    if (!contextMenu) return
-    addToInitiative({
-      id: contextMenu.tokenId,
-      name: contextMenu.tokenName,
-      color: contextMenu.tokenColor,
-      initiative: null,
-      tokenId: contextMenu.tokenId,
+    showContextMenu({
+      x: e.evt.clientX,
+      y: e.evt.clientY,
+      title: tokenName,
+      color: tokenColor,
+      items: [
+        {
+          id: 'initiative-add',
+          label: '⚔️ Добавить в инициативу',
+          onClick: () => {
+            addToInitiative({
+              id: tokenId,
+              name: tokenName,
+              color: tokenColor,
+              initiative: null,
+              tokenId,
+            })
+            setActivePanel('initiative')
+          },
+        },
+        {
+          id: 'initiative-remove',
+          label: '✕ Убрать из инициативы',
+          onClick: () => removeFromInitiative(tokenId),
+        },
+        {
+          id: 'duplicate',
+          label: '📋 Дублировать',
+          onClick: () => {
+            const token = tokens.find(t => t.id === tokenId)
+            if (token) {
+              createToken({
+                ...token,
+                id: `token-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                x: token.x + 20,
+                y: token.y + 20,
+              })
+            }
+          },
+        },
+        {
+          id: 'delete',
+          label: '🗑️ Удалить токен',
+          danger: true,
+          onClick: () => {
+            getTransport().deleteToken(roomId!, tokenId)
+          },
+        },
+      ],
     })
-    setContextMenu(null)
-    setActivePanel('initiative')
   }
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
@@ -174,7 +193,6 @@ export default function RoomPage() {
     e.dataTransfer.dropEffect = 'copy'
   }
 
-  // Тулбары — теперь хранят ссылку на компонент панели
   const tools = [
     { id: 'select',  Icon: FaMousePointer, label: 'Выделение' },
     { id: 'move',    Icon: MdPanTool,      label: 'Перетаскивание' },
@@ -186,17 +204,16 @@ export default function RoomPage() {
   ]
 
   const listItems = [
-    { id: 'players',    Icon: FaUsers,   label: 'Игроки',     title: 'Игроки',          Panel: PlayersPanel },
-    { id: 'initiative', Icon: FaDice,    label: 'Инициатива', title: 'Инициатива',      Panel: InitiativePanel },
-    { id: 'dice',       Icon: FaDiceD20, label: 'Броски',     title: 'Броски кубиков',  Panel: DicePanel },
+    { id: 'players',    Icon: FaUsers, label: 'Игроки',     title: 'Игроки',     Panel: PlayersPanel },
+    { id: 'initiative', Icon: FaDice,  label: 'Инициатива', title: 'Инициатива', Panel: InitiativePanel },
   ]
 
   const assetItems = [
-    { id: 'search',  Icon: MdSearch,    label: 'Поиск',    title: 'Поиск',    Panel: SearchPanel },
-    { id: 'tokens',  Icon: FaUserNinja, label: 'Токены',   title: 'Токены',   Panel: TokensLibrary },
-    { id: 'scenes',  Icon: FaMap,       label: 'Сцены',    title: 'Сцены',    Panel: ScenesPanel },
-    { id: 'objects', Icon: FaCube,      label: 'Объекты',  title: 'Объекты',  Panel: ObjectsPanel },
-    { id: 'grid',    Icon: MdGridOn,    label: 'Сетка',    title: 'Сетка',    Panel: GridPanel },
+    { id: 'search',  Icon: MdSearch,    label: 'Поиск',   title: 'Поиск',   Panel: SearchPanel },
+    { id: 'tokens',  Icon: FaUserNinja, label: 'Токены',  title: 'Токены',  Panel: TokensLibrary },
+    { id: 'scenes',  Icon: FaMap,       label: 'Сцены',   title: 'Сцены',   Panel: ScenesPanel },
+    { id: 'objects', Icon: FaCube,      label: 'Объекты', title: 'Объекты', Panel: ObjectsPanel },
+    { id: 'grid',    Icon: MdGridOn,    label: 'Сетка',   title: 'Сетка',   Panel: GridPanel },
   ]
 
   const barStyle: React.CSSProperties = {
@@ -212,7 +229,6 @@ export default function RoomPage() {
   })
 
   const activeListItem = listItems.find(i => i.id === activePanel)
-  const activeAssetItem = assetItems.find(i => i.id === activeSection)
 
   return (
     <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', background: '#1a1a2e', overflow: 'hidden' }}>
@@ -255,33 +271,8 @@ export default function RoomPage() {
           )}
         </div>
 
-        {/* Контекстное меню токена */}
-        {contextMenu && (
-          <div onClick={e => e.stopPropagation()} style={{ position: 'fixed', top: contextMenu.y, left: contextMenu.x, background: '#16213e', border: '1px solid #1e293b', borderRadius: 10, padding: '6px', zIndex: 999, minWidth: 180, boxShadow: '0 4px 20px rgba(0,0,0,0.5)' }}>
-            <div style={{ padding: '4px 8px 8px', borderBottom: '1px solid #1e293b', marginBottom: 4 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ width: 10, height: 10, borderRadius: '50%', background: contextMenu.tokenColor }} />
-                <span style={{ color: '#e2e8f0', fontSize: 13, fontWeight: 'bold' }}>{contextMenu.tokenName}</span>
-              </div>
-            </div>
-            <button
-              onClick={handleAddToInitiative}
-              style={{ width: '100%', padding: '7px 10px', borderRadius: 6, background: 'transparent', border: 'none', color: '#e2e8f0', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left' }}
-              onMouseEnter={e => (e.currentTarget.style.background = '#0f3460')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-            >
-              ⚔️ Добавить в инициативу
-            </button>
-            <button
-              onClick={() => { removeFromInitiative(contextMenu.tokenId); setContextMenu(null) }}
-              style={{ width: '100%', padding: '7px 10px', borderRadius: 6, background: 'transparent', border: 'none', color: '#94a3b8', fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, textAlign: 'left' }}
-              onMouseEnter={e => (e.currentTarget.style.background = '#0f3460')}
-              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-            >
-              ✕ Убрать из инициативы
-            </button>
-          </div>
-        )}
+        {/* Универсальное контекстное меню */}
+        <ContextMenu />
 
         {/* БАР 1 — списки (верхний левый) */}
         <div style={{ position: 'absolute', top: 12, left: 12 }}>
@@ -293,6 +284,13 @@ export default function RoomPage() {
                 <Icon size={16} color={activePanel === id ? '#fff' : '#94a3b8'} />
               </button>
             ))}
+            <button
+              title="Броски кубиков"
+              onClick={() => setDiceOpen(v => !v)}
+              style={iconBtn(diceOpen)}
+            >
+              <FaDiceD20 size={16} color={diceOpen ? '#fff' : '#94a3b8'} />
+            </button>
           </div>
 
           {activeListItem && (
@@ -319,8 +317,6 @@ export default function RoomPage() {
         <div style={{ position: 'absolute', bottom: 12, left: '50%', transform: 'translateX(-50%)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
           {activeSection && (
             <div style={{ background: '#16213e', border: '1px solid #1e293b', borderRadius: 12, padding: 14, minWidth: 280 }}>
-              
-
               {activeSection === 'tokens' && <TokensLibrary />}
 
               {(activeSection === 'scenes' || activeSection === 'objects') && (
@@ -349,7 +345,10 @@ export default function RoomPage() {
           </div>
         </div>
 
-
+        {/* DicePanel */}
+        {diceOpen && (
+          <DicePanel roomId={roomId} onClose={() => setDiceOpen(false)} />
+        )}
 
       </div>
     </div>
